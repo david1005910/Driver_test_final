@@ -1,17 +1,22 @@
 const express = require("express");
 const { getPool } = require("../db");
+const { getVideo } = require("../services/videoCatalog");
+const { displayQuestion } = require("../services/questionDisplay");
 
 const router = express.Router();
 
 function normalizeQuestion(r) {
+  const video = getVideo(r.no);
   return {
     id: r.id,
     no: r.no,
-    question: r.question,
+    question: displayQuestion(r.question, r.no),
     options: JSON.parse(r.options),
     answer: JSON.parse(r.answer),
     explanation: r.explanation,
     images: r.images ? JSON.parse(r.images) : [],
+    has_video: Boolean(video),
+    video_page: video ? video.page : null,
     wrong_count: r.wrong_count,
     solved_count: r.solved_count,
     last_wrong_at: r.last_wrong_at,

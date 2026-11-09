@@ -1,37 +1,126 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { get, post } from "../api";
-import QuestionView from "../components/QuestionView.jsx";
+import { clearStored, usePersistentState, useScrollMemory } from "../usePersistentState";
 
 const DURATION = 40 * 60; // 40분
 
 export default function Quiz() {
-  const [license, setLicense] = useState(2);
-  const [paper, setPaper] = useState(null);
-  const [answers, setAnswers] = useState({}); // qid -> [idx]
-  const [saved, setSaved] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(DURATION);
+  // 진행 중인 모의고사(문제지·답안·마감 시각)를 저장해 잠깐 쉬어도 이어서 푼다.
+  const [license, setLicense] = usePersistentState(
+    "driver.quiz.license",
+    2,
+    (v) => v === 1 || v === 2
+  );
+  const [paper, setPaper] = usePersistentState(
+    "driver.quiz.paper",
+    null,
+    (v) => v === null || (v && Array.isArray(v.items))
+  );
+  const [answers, setAnswers] = usePersistentState(
+    "driver.quiz.answers",
+    {}, // qid -> [idx]
+    (v) => v !== null && typeof v === "object" && !Array.isArray(v)
+  );
+  const [saved, setSaved] = usePersistentState(
+    "driver.quiz.saved",
+    false,
+    (v) => typeof v === "boolean"
+  );
+  const [result, setResult] = usePersistentState(
+    "driver.quiz.result",
+    null,
+    (v) => v === null || (v && typeof v === "object")
+  );
+  const [deadline, setDeadline] = usePersistentState(
+    "driver.quiz.deadline",
+    null,
+    (v) => v === null || (typeof v === "number" && Number.isFinite(v))
+  );
+  const [timeLeft, setTimeLeft] = useState(() =>
+    deadline ? Math.max(0, Math.ceil((deadline - Date.now()) / 1000)) : DURATION
+  );
   const timerRef = useRef(null);
 
   useEffect(() => {
-    if (!paper) return;
-    timerRef.current = setInterval(() => {
-      setTimeLeft((t) => (t <= 0 ? 0 : t - 1));
-    }, 1000);
+    if (!paper || result || !deadline) return;
+    const tick = () => {
+      setTimeLeft(Math.max(0, Math.ceil((deadline - Date.now()) / 1000)));
+    };
+    tick();
+    timerRef.current = setInterval(tick, 1000);
     return () => clearInterval(timerRef.current);
-  }, [paper]);
+  }, [paper, deadline, result]);
 
   useEffect(() => {
-    if (timeLeft === 0 && paper && !saved) {
+    if (timeLeft === 0 && paper && !saved && !result) {
       submit();
     }
-  }, [timeLeft]);
+  }, [timeLeft, paper, saved, result]);
+
+  // 제출 도중 탭이 닫혀 결과가 저장되지 못한 경우 버튼이 잠기지 않도록 복구한다.
+  useEffect(() => {
+    if (saved && !result) setSaved(false);
+  }, []);
+
+  // 시험지 스크롤 위치도 기억해 풀던 문제 근처로 돌아온다.
+  useScrollMemory("driver.quiz.scroll", !!paper && !result);
+
+  // 영상 기능 추가 전에 저장된 시험지는 새 필드(has_video 등)가 없으므로 영상 메타데이터를 보강한다.
+  useEffect(() => {
+    if (!paper || paper.items.every((i) => i.has_video !== undefined)) return;
+    let alive = true;
+    get("/videos")
+      .then(({ videos }) => {
+        if (!alive) return;
+        setPaper((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            items: prev.items.map((item) => {
+              const meta = videos?.[String(item.no)];
+              return {
+                ...item,
+                has_video: Boolean(meta),
+                video_page: meta?.page || null,
+                question: meta
+                  ? item.question.replace(/\s*\(홈페이지 참조\)/g, "").trim()
+                  : item.question,
+              };
+            }),
+          };
+        });
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+    // 저장된 시험지는 마운트 시점 값만 확인하면 된다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (result) window.scrollTo(0, 0);
+  }, [result]);
 
   function start() {
+    clearStored("driver.quiz.scroll");
     setPaper(null);
     setAnswers({});
     setSaved(false);
+    setResult(null);
+    setDeadline(Date.now() + DURATION * 1000);
     setTimeLeft(DURATION);
     get(`/exam/paper?license=${license}&count=40`).then(setPaper).catch((e) => alert(e.message));
+  }
+
+  function reset() {
+    clearStored("driver.quiz.scroll");
+    setPaper(null);
+    setAnswers({});
+    setSaved(false);
+    setResult(null);
+    setDeadline(null);
+    setTimeLeft(DURATION);
   }
 
   function setAnswer(qid, idx) {
@@ -47,6 +136,7 @@ export default function Quiz() {
   }
 
   async function submit() {
+    if (!paper || result) return;
     if (timerRef.current) clearInterval(timerRef.current);
     setSaved(true);
     const body = {
@@ -57,15 +147,15 @@ export default function Quiz() {
       })),
     };
     try {
-      const result = await post("/exam/grade", body);
-      setResult(result);
+      const graded = await post("/exam/grade", body);
+      setResult(graded);
+      setDeadline(null);
     } catch (e) {
       alert(e.message);
       setSaved(false);
     }
   }
 
-  const [result, setResult] = useState(null);
   const answeredCount = Object.keys(answers).length;
   const mm = Math.floor(timeLeft / 60);
   const ss = timeLeft % 60;
@@ -104,10 +194,10 @@ export default function Quiz() {
             {result.total}문항 중 {result.correct}개 정답 · 합격 기준 {result.pass_score}점
           </div>
         </div>
-        <button className="btn primary" onClick={() => { setPaper(null); window.location.hash = "wrong"; }}>
+        <button className="btn primary" onClick={() => { reset(); window.location.hash = "wrong"; }}>
           오답노트에서 다시 학습하기
         </button>
-        <button className="btn" onClick={() => setPaper(null)}>
+        <button className="btn" onClick={reset}>
           다시 도전
         </button>
       </div>
@@ -148,12 +238,34 @@ export default function Quiz() {
               <div className="quiz-q-head">
                 <span className="q-no">문제 {i + 1} · {q.no}번</span>
                 {q.images && q.images.length > 0 && <span className="tag img">이미지문제</span>}
+                {q.has_video && <span className="tag video">영상문제</span>}
               </div>
               {q.images && q.images.length > 0 && (
                 <div className="q-images">
                   {q.images.map((im) => (
                     <img key={im} src={`/images/${im}`} alt="문제 이미지" className="q-img" loading="lazy" />
                   ))}
+                </div>
+              )}
+              {q.has_video && (
+                <div className="q-video">
+                  <div className="q-video-label">🎬 문제 영상</div>
+                  <video
+                    key={`video-${q.no}`}
+                    controls
+                    playsInline
+                    preload="metadata"
+                    src={`/api/videos/${q.no}`}
+                  >
+                    브라우저가 영상을 재생할 수 없습니다.
+                  </video>
+                  {q.video_page && (
+                    <div className="q-video-foot">
+                      <a href={q.video_page} target="_blank" rel="noreferrer">
+                        영상이 재생되지 않으면 공식 사이트에서 보기
+                      </a>
+                    </div>
+                  )}
                 </div>
               )}
               <div className="q-text">{q.question}</div>

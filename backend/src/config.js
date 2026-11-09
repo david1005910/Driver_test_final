@@ -17,5 +17,7 @@ module.exports = {
   data: {
     bankJson: process.env.BANK_JSON || "/app/data/bank.json",
     imagesDir: process.env.IMAGES_DIR || "/app/data/images",
+    videosDir: process.env.VIDEOS_DIR || "/app/data/videos",
+    videosJson: process.env.VIDEOS_JSON || "/app/data/videos.json",
   },
 };

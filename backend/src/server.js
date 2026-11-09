@@ -15,6 +15,7 @@ app.use("/api/wrong", require("./routes/wrong"));
 app.use("/api/stats", require("./routes/stats"));
 app.use("/api/exam", require("./routes/exam"));
 app.use("/api/rag", require("./routes/rag"));
+app.use("/api/videos", require("./routes/videos"));
 
 app.get("/api/health", async (req, res) => {
   try {

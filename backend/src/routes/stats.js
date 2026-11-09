@@ -1,5 +1,7 @@
 const express = require("express");
 const { getPool } = require("../db");
+const { getVideo } = require("../services/videoCatalog");
+const { displayQuestion } = require("../services/questionDisplay");
 
 const router = express.Router();
 
@@ -36,13 +38,18 @@ router.get("/", async (req, res) => {
       wrong_questions: wrongQuestions,
       wrong_attempts: wrongCounts,
       recent7d: { attempts: recent, accuracy: recent ? Math.round((recentCorrect / recent) * 100) : 0 },
-      weak_top5: weak.map((r) => ({
-        id: r.id,
-        no: r.no,
-        question: r.question,
-        images: r.images ? JSON.parse(r.images) : [],
-        wrong_count: r.wrong_count,
-      })),
+      weak_top5: weak.map((r) => {
+        const video = getVideo(r.no);
+        return {
+          id: r.id,
+          no: r.no,
+          question: displayQuestion(r.question, r.no),
+          images: r.images ? JSON.parse(r.images) : [],
+          has_video: Boolean(video),
+          video_page: video ? video.page : null,
+          wrong_count: r.wrong_count,
+        };
+      }),
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

@@ -139,7 +139,21 @@ export default function AITutor() {
       {/* 검색 방식 및 가중치 설정 패널 */}
       <div className="rag-control-panel">
         <div className="rag-mode-group">
-          <span className="rag-control-label">검색 엔진 모드:</span>
+          <span className="rag-control-label">LLM:</span>
+          <span
+            style={{
+              padding: "5px 10px",
+              fontSize: 13,
+              fontWeight: 700,
+              border: "1px solid var(--border, #cbd5e1)",
+              borderRadius: 8,
+              background: "var(--bg, #fff)",
+            }}
+            title="AI 모델은 qwen2.5:3b로 고정되어 있습니다"
+          >
+            qwen2.5:3b
+          </span>
+          <span className="rag-control-label" style={{ marginLeft: 6 }}>검색 엔진:</span>
           <div className="rag-mode-buttons">
             <button
               type="button"

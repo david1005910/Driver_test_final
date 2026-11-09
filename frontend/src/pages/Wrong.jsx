@@ -1,16 +1,36 @@
 import React, { useEffect, useState } from "react";
 import { del, get, post, postStream } from "../api";
 import QuestionView from "../components/QuestionView.jsx";
+import { usePersistentState, useScrollMemory } from "../usePersistentState";
 
 export default function Wrong() {
   const [items, setItems] = useState(null);
-  const [active, setActive] = useState(null);
+  // 풀던 오답 문제도 탭 전환/새로고침 후 이어서 볼 수 있게 유지한다.
+  const [active, setActive] = usePersistentState(
+    "driver.wrong.active",
+    null,
+    (v) => v === null || (v && typeof v === "object" && Number.isInteger(v.id))
+  );
   const [notice, setNotice] = useState(null);
 
   function load() {
     get("/wrong").then(setItems).catch((e) => alert(e.message));
   }
   useEffect(load, []);
+
+  // 이미 오답노트에서 제거된 문제가 저장되어 있으면 목록으로 돌아간다.
+  // 영상 기능 추가 전에 저장된 문제는 새 필드(has_video 등)가 없으므로 최신 목록 항목으로 교체한다.
+  useEffect(() => {
+    if (!active || !items) return;
+    const fresh = items.items.find((q) => q.id === active.id);
+    if (!fresh) {
+      setActive(null);
+    } else if (active.has_video === undefined) {
+      setActive(fresh);
+    }
+  }, [items]);
+
+  useScrollMemory(active ? `driver.wrong.scroll.${active.id}` : "driver.wrong.scroll", !!active);
 
   function next() {
     if (!items || !active) return;
@@ -103,6 +123,7 @@ export default function Wrong() {
                   {q.no}번 · {q.question.slice(0, 70)}
                 </button>
                 <span className="tag warn">{q.wrong_count}회 틀림</span>
+                {q.has_video && <span className="tag video">영상</span>}
               </div>
               <div className="muted small">총 {q.solved_count}회 풀이</div>
             </div>

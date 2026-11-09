@@ -15,7 +15,9 @@ Driver_test/
 ├── scripts/extract_pdf.py      # PDF → data/bank.json 추출 (재실행용)
 ├── data/
 │   ├── bank.json               # 999문항 원본 (no/question/options/answer/explanation/images)
-│   └── images/                 # 289개 문제 이미지 PNG
+│   ├── images/                 # 289개 문제 이미지 PNG
+│   ├── videos/                 # 966~999번 동영상 MP4 (git 제외, fetch_videos.py로 생성)
+│   └── videos.json             # 동영상 문제 ↔ 공식 게시글/영상 메타데이터
 ├── backend/                    # Node.js + Express + MySQL
 │   └── src/
 │       ├── server.js           # API 서버 (정적 dist 서빙 겸)
@@ -77,6 +79,23 @@ docker exec driver_test_api node src/scripts/seed.js
 
 # 이미지 포함 문제도 data/images/, scripts/ 디렉토리를 그대로 두면 자동 반영
 ```
+
+## 동영상 문제 (966~999번)
+
+공식 문제은행의 동영상 문제는 PDF에 영상이 포함되어 있지 않습니다. 아래 스크립트가 도로교통공단 '동영상 문제' 게시글에서 최신 영상을 받아 `data/videos/{번호}.mp4`로 저장하고, 브라우저 호환을 위해 WMV는 H.264/AAC MP4로 변환합니다.
+
+```bash
+# ffmpeg 필요 (macOS: brew install ffmpeg)
+python3 scripts/fetch_videos.py
+
+# 이미 받은 영상은 건너뛰고, 없는 영상만 받는다.
+# 전부 다시 받으려면 --force
+python3 scripts/fetch_videos.py --force
+```
+
+- 앱에서는 `/api/videos/{번호}`로 재생되며, 학습·오답노트·모의고사 화면에 영상 플레이어가 표시됩니다.
+- 영상 파일은 `data/videos/`에만 저장되고 git에는 포함되지 않습니다. (`data/videos.json` 메타데이터만 추적)
+- 영상이 없는 상태에서는 기존처럼 문제에 `(홈페이지 참조)` 안내가 유지됩니다.
 
 ## 문제은행 출처 및 재추출
 

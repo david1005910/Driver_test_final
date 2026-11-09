@@ -94,6 +94,7 @@ router.post("/explain", async (req, res) => {
     const q = await getQuestionById(questionId);
     if (!q) return res.status(404).json({ error: "question not found" });
 
+    // LLM은 qwen2.5:3b로 고정 (클라이언트가 보낸 model 값은 무시)
     const searchOpts = { searchMode, alpha: Number(alpha), k: Number(k) || 4 };
 
     if (!stream) {
@@ -144,6 +145,7 @@ router.post("/ask", async (req, res) => {
     const { query, stream, searchMode = "hybrid", alpha = 0.6, k = 4 } = req.body;
     if (!query || !query.trim()) return res.status(400).json({ error: "query required" });
 
+    // LLM은 qwen2.5:3b로 고정 (클라이언트가 보낸 model 값은 무시)
     const searchOpts = { searchMode, alpha: Number(alpha), k: Number(k) || 4 };
 
     if (!stream) {

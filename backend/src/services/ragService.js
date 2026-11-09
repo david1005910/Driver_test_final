@@ -107,8 +107,13 @@ function toSimilarMeta(similar) {
   }));
 }
 
-async function streamChat(prompt, onDelta) {
-  const reader = await generateStream({ prompt, system: SYSTEM_PROMPT, options: { num_predict: MAX_TOKENS } });
+async function streamChat(prompt, onDelta, model) {
+  const reader = await generateStream({
+    prompt,
+    system: SYSTEM_PROMPT,
+    model,
+    options: { num_predict: MAX_TOKENS },
+  });
   const decoder = new TextDecoder();
   let buf = "";
   let modelDone = false;
@@ -166,6 +171,7 @@ async function explainWrongQuestion(q, wrongAnswer, searchOpts = {}) {
   const res = await generate({
     prompt: buildExplainPrompt(q, wrongAnswer, contextItems),
     system: SYSTEM_PROMPT,
+    model: searchOpts.model,
     options: { num_predict: MAX_TOKENS },
   });
   return {
@@ -173,6 +179,7 @@ async function explainWrongQuestion(q, wrongAnswer, searchOpts = {}) {
     similar: toSimilarMeta(chartItems),
     searchMode: searchOpts.searchMode || "hybrid",
     alpha: typeof searchOpts.alpha === "number" ? searchOpts.alpha : 0.6,
+    model: searchOpts.model,
     answer: res.message ? res.message.content : "",
   };
 }
@@ -186,9 +193,10 @@ async function explainWrongQuestionStream(q, wrongAnswer, onDelta, searchOpts = 
     similar: similarMeta,
     searchMode: searchOpts.searchMode || "hybrid",
     alpha: typeof searchOpts.alpha === "number" ? searchOpts.alpha : 0.6,
+    model: searchOpts.model,
   };
   if (onMeta) onMeta(metaPayload);
-  await streamChat(buildExplainPrompt(q, wrongAnswer, contextItems), onDelta);
+  await streamChat(buildExplainPrompt(q, wrongAnswer, contextItems), onDelta, searchOpts.model);
   return metaPayload;
 }
 
@@ -198,12 +206,14 @@ async function askFreeForm(query, searchOpts = {}) {
   const res = await generate({
     prompt: buildAskPrompt(query, contextItems),
     system: SYSTEM_PROMPT,
+    model: searchOpts.model,
     options: { num_predict: MAX_TOKENS },
   });
   return {
     similar: toSimilarMeta(chartItems),
     searchMode: searchOpts.searchMode || "hybrid",
     alpha: typeof searchOpts.alpha === "number" ? searchOpts.alpha : 0.6,
+    model: searchOpts.model,
     answer: res.message ? res.message.content : "",
   };
 }
@@ -216,9 +226,10 @@ async function askFreeFormStream(query, onDelta, searchOpts = {}, onMeta = null)
     similar: similarMeta,
     searchMode: searchOpts.searchMode || "hybrid",
     alpha: typeof searchOpts.alpha === "number" ? searchOpts.alpha : 0.6,
+    model: searchOpts.model,
   };
   if (onMeta) onMeta(metaPayload);
-  await streamChat(buildAskPrompt(query, contextItems), onDelta);
+  await streamChat(buildAskPrompt(query, contextItems), onDelta, searchOpts.model);
   return metaPayload;
 }
 

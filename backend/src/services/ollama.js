@@ -31,9 +31,20 @@ async function isAvailable() {
   }
 }
 
-async function generate({ prompt, system, stream, options = {} }) {
-  return fetchJson("/api/chat", {
-    model: config.ollama.chatModel,
+async function listModels() {
+  try {
+    const data = await fetchJson("/api/tags");
+    return (data.models || []).map((m) => m.name);
+  } catch (e) {
+    return [];
+  }
+}
+
+async function generate({ prompt, system, stream, model, options = {} }) {
+  const data = await fetchJson("/api/chat", {
+    model: model || config.ollama.chatModel,
+    // thinking 모델(MiniCPM 등)이 사고 과정만 출력하고 본문을 비우는 것을 방지
+    think: false,
     messages: [
       ...(system ? [{ role: "system", content: system }] : []),
       { role: "user", content: prompt },
@@ -41,15 +52,20 @@ async function generate({ prompt, system, stream, options = {} }) {
     stream: stream || false,
     options: { temperature: 0.0, top_p: 0.1, repeat_penalty: 1.2, ...options },
   });
+  if (data.message && !data.message.content && data.message.thinking) {
+    data.message.content = data.message.thinking;
+  }
+  return data;
 }
 
-async function generateStream({ prompt, system, options = {} }) {
+async function generateStream({ prompt, system, model, options = {} }) {
   const url = `${config.ollama.baseUrl}/api/chat`;
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: config.ollama.chatModel,
+      model: model || config.ollama.chatModel,
+      think: false,
       messages: [
         ...(system ? [{ role: "system", content: system }] : []),
         { role: "user", content: prompt },
@@ -64,4 +80,4 @@ async function generateStream({ prompt, system, options = {} }) {
   return res.body.getReader();
 }
 
-module.exports = { embed, generate, generateStream, isAvailable, fetchJson };
+module.exports = { embed, generate, generateStream, isAvailable, listModels, fetchJson };

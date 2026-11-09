@@ -1,22 +1,51 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { get, post, postStream } from "../api";
 import QuestionView from "../components/QuestionView.jsx";
 import { onOpenQuestion } from "../nav";
+import { usePersistentState, useScrollMemory } from "../usePersistentState";
 
 const PAGE_SIZE = 10;
 
 export default function Study() {
-  const [type, setType] = useState("");
-  const [multi, setMulti] = useState("");
-  const [page, setPage] = useState(1);
+  // 필터 / 페이지 / 풀던 문제를 저장해 두었다가 탭 전환이나 새로고침 후 이어서 푼다.
+  const [type, setType] = usePersistentState("driver.study.type", "", (v) => typeof v === "string");
+  const [multi, setMulti] = usePersistentState("driver.study.multi", "", (v) => typeof v === "string");
+  const [page, setPage] = usePersistentState(
+    "driver.study.page",
+    1,
+    (v) => Number.isInteger(v) && v > 0
+  );
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [active, setActive] = useState(null);
-  const [pendingPos, setPendingPos] = useState(null); // 'first' | 'last'
+  const [active, setActive] = usePersistentState(
+    "driver.study.active",
+    null,
+    (v) => v === null || (v && typeof v === "object" && Number.isInteger(v.id))
+  );
+  const prevFilters = useRef({ type, multi });
 
   useEffect(() => {
+    // 필터가 실제로 바뀐 경우에만 1페이지로 돌아간다.
+    // (StrictMode의 effect 2회 실행에도 저장된 위치가 지워지지 않도록 비교 방식 사용)
+    const prev = prevFilters.current;
+    if (prev.type === type && prev.multi === multi) return;
+    prevFilters.current = { type, multi };
     setPage(1);
+    setActive(null);
   }, [type, multi]);
+
+  // 풀던 문제의 스크롤 위치도 함께 기억한다.
+  useScrollMemory(active ? `driver.study.scroll.${active.id}` : "driver.study.scroll", !!active);
+
+  // 영상 기능 추가 전에 저장된 문제는 새 필드(has_video 등)가 없으므로 한 번 새로 받아온다.
+  useEffect(() => {
+    if (!active || active.has_video !== undefined) return;
+    get(`/questions/by-no/${active.no}`)
+      .then((q) => setActive(q))
+      .catch(() => {});
+    // 저장된 active는 마운트 시점 값만 확인하면 된다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -28,11 +57,6 @@ export default function Study() {
       .then((d) => {
         if (!alive) return;
         setData(d);
-        if (pendingPos && d.items && d.items.length > 0) {
-          if (pendingPos === "first") setActive(d.items[0]);
-          else if (pendingPos === "last") setActive(d.items[d.items.length - 1]);
-          setPendingPos(null);
-        }
       })
       .catch((e) => alive && alert(e.message))
       .finally(() => alive && setLoading(false));
@@ -59,29 +83,47 @@ export default function Study() {
     }
   }
 
-  const activeIndex = data && active ? data.items.findIndex((q) => q.id === active.id) : -1;
-  const hasPrev = activeIndex > 0 || page > 1;
-  const hasNext = (data && activeIndex >= 0 && activeIndex < data.items.length - 1) || page < totalPages;
+  // 필터와 관계없이 '이전/다음 문제'는 전체 문항 번호 순서(1~999)로 이동한다.
+  const maxNo = Number(data?.max_no) || 999;
+  const hasPrev = !!active && active.no > 1;
+  const hasNext = !!active && active.no < maxNo;
+
+  function goToNo(no) {
+    if (!Number.isInteger(no) || no < 1 || no > maxNo) return;
+    // 필터가 없으면 목록 페이지도 현재 문제 위치로 맞춰 '목록으로'가 자연스럽게 이어지게 한다.
+    if (!type && !multi) {
+      const targetPage = Math.floor((no - 1) / PAGE_SIZE) + 1;
+      if (targetPage !== page) setPage(targetPage);
+    }
+    const cached = data?.items?.find((q) => q.no === no);
+    if (cached) {
+      setActive(cached);
+      return;
+    }
+    get(`/questions/by-no/${no}`)
+      .then((q) => setActive(q))
+      .catch((e) => alert(e.message));
+  }
 
   function goPrev() {
-    if (!data || activeIndex === -1) return;
-    if (activeIndex > 0) {
-      setActive(data.items[activeIndex - 1]);
-    } else if (page > 1) {
-      setPendingPos("last");
-      setPage((p) => p - 1);
-    }
+    if (active) goToNo(active.no - 1);
   }
 
   function goNext() {
-    if (!data || activeIndex === -1) return;
-    if (activeIndex < data.items.length - 1) {
-      setActive(data.items[activeIndex + 1]);
-    } else if (page < totalPages) {
-      setPendingPos("first");
-      setPage((p) => p + 1);
-    }
+    if (active) goToNo(active.no + 1);
   }
+
+  // 현재 문제가 선택한 필터에 속하는지 (순차 이동은 필터와 무관하게 동작)
+  const matchesFilter =
+    !!active &&
+    (!type ||
+      (type === "image"
+        ? (active.images?.length || 0) > 0
+        : (active.images?.length || 0) === 0)) &&
+    (!multi ||
+      (multi === "1"
+        ? active.answer?.length === 1
+        : (active.answer?.length || 0) > 1));
 
   return (
     <div className="page">
@@ -123,6 +165,11 @@ export default function Study() {
             </div>
           </div>
           <h2>문제 {active.no}번</h2>
+          {!matchesFilter && (
+            <p className="muted small" style={{ marginTop: -4 }}>
+              현재 문제는 선택한 필터에 포함되지 않지만, 전체 번호 순서(1~{maxNo})로 이어서 풀고 있습니다.
+            </p>
+          )}
           <QuestionView
             key={active.id}
             q={active}
@@ -171,6 +218,7 @@ export default function Study() {
                 </button>
                 {q.answer.length > 1 && <span className="tag multi">복수정답</span>}
                 {q.images.length > 0 && <span className="tag img">이미지</span>}
+                {q.has_video && <span className="tag video">영상</span>}
               </div>
             </div>
           ))}

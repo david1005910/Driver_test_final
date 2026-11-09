@@ -1,6 +1,8 @@
 const express = require("express");
 const { getPool } = require("../db");
 const { addAttempt } = require("./attempts");
+const { getVideo } = require("../services/videoCatalog");
+const { displayQuestion } = require("../services/questionDisplay");
 
 const router = express.Router();
 
@@ -14,13 +16,18 @@ router.get("/paper", async (req, res) => {
       [count]
     );
     // 실제 시험과 동일 구조(mixed 4지/5지선다) — 정보 제공 목적으로 answer는 감춘다
-    const paper = rows.map((r) => ({
-      id: r.id,
-      no: r.no,
-      question: r.question,
-      options: JSON.parse(r.options),
-      images: r.images ? JSON.parse(r.images) : [],
-    }));
+    const paper = rows.map((r) => {
+      const video = getVideo(r.no);
+      return {
+        id: r.id,
+        no: r.no,
+        question: displayQuestion(r.question, r.no),
+        options: JSON.parse(r.options),
+        images: r.images ? JSON.parse(r.images) : [],
+        has_video: Boolean(video),
+        video_page: video ? video.page : null,
+      };
+    });
     res.json({
       license,
       pass_score: license === 1 ? 70 : 60,

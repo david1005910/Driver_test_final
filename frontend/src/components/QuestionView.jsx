@@ -50,6 +50,7 @@ export default function QuestionView({
         <span className="q-no">{item.no}번</span>
         {item.answer && item.answer.length > 1 && <span className="tag multi">복수정답</span>}
         {item.images && item.images.length > 0 && <span className="tag img">이미지문제</span>}
+        {item.has_video && <span className="tag video">영상문제</span>}
       </div>
 
       {item.images && item.images.length > 0 && (
@@ -57,6 +58,28 @@ export default function QuestionView({
           {item.images.map((im) => (
             <img key={im} src={imageUrl(im)} alt={`문제 ${item.no} 이미지`} className="q-img" loading="lazy" />
           ))}
+        </div>
+      )}
+
+      {item.has_video && (
+        <div className="q-video">
+          <div className="q-video-label">🎬 문제 영상</div>
+          <video
+            key={`video-${item.no}`}
+            controls
+            playsInline
+            preload="metadata"
+            src={`/api/videos/${item.no}`}
+          >
+            브라우저가 영상을 재생할 수 없습니다.
+          </video>
+          {item.video_page && (
+            <div className="q-video-foot">
+              <a href={item.video_page} target="_blank" rel="noreferrer">
+                영상이 재생되지 않으면 공식 사이트에서 보기
+              </a>
+            </div>
+          )}
         </div>
       )}
 
@@ -247,6 +270,19 @@ function AIExplain({ id, wrongAnswer, explainer }) {
         <button className="btn ghost" onClick={() => run(searchMode)} disabled={loading}>
           {loading ? "AI 해설 생성 중..." : content ? "🔄 AI 해설 다시 생성" : "🤖 AI 해설 보기 (RAG)"}
         </button>
+        <span
+          style={{
+            padding: "6px 10px",
+            fontSize: 12.5,
+            fontWeight: 700,
+            border: "1px solid var(--border, #cbd5e1)",
+            borderRadius: 8,
+            background: "var(--bg, #fff)",
+          }}
+          title="AI 모델은 qwen2.5:3b로 고정되어 있습니다"
+        >
+          LLM: qwen2.5:3b
+        </span>
         <div className="rag-mode-buttons compact">
           <button
             type="button"
