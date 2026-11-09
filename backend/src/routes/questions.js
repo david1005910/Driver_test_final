@@ -1,6 +1,8 @@
 const express = require("express");
 const { getPool } = require("../db");
 const { addAttempt } = require("./attempts");
+const { getVideo } = require("../services/videoCatalog");
+const { displayQuestion } = require("../services/questionDisplay");
 
 const router = express.Router();
 
@@ -26,6 +28,8 @@ router.get("/", async (req, res) => {
       `SELECT COUNT(*) AS total FROM questions ${whereSql}`,
       params
     );
+    // 필터와 무관한 전체 문항 번호 범위 (다음/이전 문제 이동에 사용)
+    const [[{ maxNo }]] = await getPool().query("SELECT MAX(no) AS maxNo FROM questions");
     const [rows] = await getPool().query(
       `SELECT id, no, question, options, answer, explanation, images, question_type
        FROM questions ${whereSql}
@@ -36,6 +40,7 @@ router.get("/", async (req, res) => {
       total,
       page: Number(page),
       limit: Number(limit),
+      max_no: maxNo || 0,
       items: rows.map(normalizeQuestion),
     });
   } catch (err) {
@@ -56,11 +61,13 @@ router.get("/random", async (req, res) => {
   }
 });
 
-router.get("/:id", async (req, res) => {
+// 문제 번호(no)로 조회 - 이전/다음 문제 이동 및 유사문제 추천용
+// 주의: /:id 보다 먼저 정의해야 Express 라우트 매칭이 올바르게 동작함
+router.get("/by-no/:no", async (req, res) => {
   try {
     const [rows] = await getPool().query(
-      "SELECT id, no, question, options, answer, explanation, images, question_type FROM questions WHERE id = ?",
-      [req.params.id]
+      "SELECT id, no, question, options, answer, explanation, images, question_type FROM questions WHERE no = ?",
+      [req.params.no]
     );
     if (!rows.length) return res.status(404).json({ error: "not found" });
     res.json(normalizeQuestion(rows[0]));
@@ -69,12 +76,11 @@ router.get("/:id", async (req, res) => {
   }
 });
 
-// 문제 번호(no)로 조회 - 유사문제 추천 시 해당 문제로 이동용
-router.get("/by-no/:no", async (req, res) => {
+router.get("/:id", async (req, res) => {
   try {
     const [rows] = await getPool().query(
-      "SELECT id, no, question, options, answer, explanation, images, question_type FROM questions WHERE no = ?",
-      [req.params.no]
+      "SELECT id, no, question, options, answer, explanation, images, question_type FROM questions WHERE id = ?",
+      [req.params.id]
     );
     if (!rows.length) return res.status(404).json({ error: "not found" });
     res.json(normalizeQuestion(rows[0]));
@@ -106,15 +112,18 @@ router.post("/:id/answer", async (req, res) => {
 });
 
 function normalizeQuestion(r) {
+  const video = getVideo(r.no);
   return {
     id: r.id,
     no: r.no,
-    question: r.question,
+    question: displayQuestion(r.question, r.no),
     options: JSON.parse(r.options),
     answer: JSON.parse(r.answer),
     explanation: r.explanation,
     images: r.images ? JSON.parse(r.images) : [],
     question_type: r.question_type,
+    has_video: Boolean(video),
+    video_page: video ? video.page : null,
   };
 }
 
